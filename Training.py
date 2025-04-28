@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 # Load Kernel
 def load_kernel():
     try:
-        mod = cuda.module_from_file("/home/alexander/Schreibtisch/Python/KIs/Kernel/matmul_kernel.ptx")
+        mod = cuda.module_from_file("Your kernel path here")
         print("Modul erfolgreich geladen!")
     except cuda.Error as e:
         print(f"Fehler beim Laden des Moduls: {e}")
