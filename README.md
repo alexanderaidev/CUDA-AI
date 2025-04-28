@@ -10,6 +10,7 @@ This project is a research initiative and serves as a **proof of concept** demon
 It is **not intended to outperform existing state-of-the-art CUDA libraries**.  
 The CUDA kernel used in this project was written manually and is intentionally minimalistic to facilitate experimentation.  
 The project is under **active development**, and new files, results, and graphs will be added continuously.
+The comment language aswell as the debug language (print-command) will be switched to english in the next update.
 
 ---
 
