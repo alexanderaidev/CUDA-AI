@@ -46,9 +46,7 @@ The project is under **active development**, and new files, results, and graphs 
 
 The model's performance is evaluated using the following novel metric:
 
-\[
-\text{Metric} = \log_{10} \left( \frac{\text{FLOPs/s}}{\left(\text{FLOPs}\right)^\alpha} \right)
-\]
+Metric = log10(FLOPs/s divided by FLOPs^alpha)
 
 where:
 - **FLOPs/s** = floating point operations per second (measured runtime performance),
