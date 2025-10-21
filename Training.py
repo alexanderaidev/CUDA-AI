@@ -13,10 +13,10 @@ import matplotlib.pyplot as plt
 # Load Kernel
 def load_kernel():
     try:
-        mod = cuda.module_from_file("Your kernel path here")
-        print("Modul erfolgreich geladen!")
+        mod = cuda.module_from_file("/home/alexander/Schreibtisch/Python/KIs/Kernel/matmul_kernel.ptx")       # you can choose a path you like, you can find the PTX kernel in the repository
+        print("Modul successfuly loaded")
     except cuda.Error as e:
-        print(f"Fehler beim Laden des Moduls: {e}")
+        print(f"Error trying to load the module: {e}")
 
     # Kernel-Funktion holen
     matmul_kernel = mod.get_function("matMulOptimized")
@@ -85,6 +85,36 @@ def run_kernel(matmul_kernel, N, M, P, A, B, C, tile_size, shared_mem_size, bloc
     
     return (elapsed_time / 1000), C
 
+# This function is used for both cases; only the parameter names vary depending on how it is called.
+def run(tile_size, block_size, N, M, P, A, B, C, FLOP, matmul_kernel, alpha_for_metrik):
+    
+    shared_mem_size = 2 * tile_size * tile_size * np.float32().itemsize  # Größe des Shared Memorys
+    block = (block_size, block_size, 1)
+    grid = ((P + tile_size - 1) // tile_size, (N + tile_size - 1) // tile_size)
+
+    # Kernel ausführen
+    elapsed_time_in_sec, C = run_kernel(matmul_kernel, N, M, P, A, B, C, tile_size, shared_mem_size, block, grid)
+
+
+    numbers_r_zero = (C == 0).sum()
+        
+    FLOPs = FLOP / elapsed_time_in_sec
+    TFLOPs = (FLOPs / 1e+12)
+    metrik = math.log10(FLOPs / (FLOP ** alpha_for_metrik))
+
+
+    return metrik, numbers_r_zero, TFLOPs
+
+
+def exploration_run():
+
+    return
+
+
+
+
+
+
 
 def env_init(N, M, P, max_kernel_size):
     
@@ -105,10 +135,10 @@ def exploration():
 
 
 # Trainingparams
-episodes = 200
-lr = 3e-4
+episodes = 1000
+lr = 1e-4
 momentum = 0.3
-alpha_for_metrik = 0.75
+alpha_for_metrik = 0.85
 expl_rate = 0.5
 beta_for_ema = 0.9
 
@@ -127,12 +157,14 @@ matmul_kernel = load_kernel()  # Load Kernel
 
 
 ema = 0
-losses = []
-flops_list = []
-efficiency_list = []
 is_in_expl = False
-flops_list_expl = []
+# Lists
 ema_list = []
+flops_list_model = []
+flops_list_expl = []
+metrik_list_expl = []
+metrik_list_model = []
+
 
 for episode in range(episodes):
 
@@ -213,35 +245,46 @@ for episode in range(episodes):
     if is_in_expl != True:
 
         # =============================================================
-        # wird ausgeführt, wenn 1. Exploration oder solange nicht in allg. Exploration ist!...!
+        # being executet, if in_first_expl = True OR it is NOT an exploration-episode
         # =============================================================
 
+        metrik, numbers_r_zero, TFLOPs = run(tile_size, block_size, N, M, P, A, B, C, FLOP, matmul_kernel, alpha_for_metrik)
 
-        shared_mem_size = 2 * tile_size * tile_size * np.float32().itemsize  # Größe des Shared Memorys
-        block = (block_size, block_size, 1)
-        grid = ((P + tile_size - 1) // tile_size, (N + tile_size - 1) // tile_size)
-
-        # Kernel ausführen
-        elapsed_time_in_sec, C = run_kernel(matmul_kernel, N, M, P, A, B, C, tile_size, shared_mem_size, block, grid)
-
-
-        numbers_r_zero = (C == 0).sum()
-        reward_zeros = (C != 0).sum() / elements
-        
-        FLOPs = FLOP / elapsed_time_in_sec
-
-       
-        metrik = math.log10(FLOPs / (FLOP ** alpha_for_metrik))
 
         if in_first_expl == True:
+            
+
             ema = (ema * beta_for_ema) + ((metrik * (3/4)) * (1-beta_for_ema))
 
         
         if in_first_expl != True:
+            flops_list_model.append(TFLOPs)
+            metrik_list_model.append(metrik)
+
             reward = metrik - ema
             ema = (ema * beta_for_ema) + (metrik * (1-beta_for_ema))
         
             delta_performance = reward * (-1)
+        
+
+            # =============================================================
+            # !This is an additional exploration, since it's needed to compare Models prediction with exploration.
+            # !But it's not needed for training.
+            # =============================================================
+
+            action_expl = exploration()
+            action_next_expl = cp.round((action_expl + 1) ** 5)   
+            action_next_expl = action_next_expl.squeeze()
+
+            tile_size_expl, block_size_expl = action_next_expl
+            tile_size_expl = int(tile_size_expl.get())
+            block_size_expl = int(block_size_expl.get())
+
+            metrik_expl, _, TFLOPs_expl = run(tile_size_expl, block_size_expl, N, M, P, A, B, C, FLOP, matmul_kernel, alpha_for_metrik)
+            
+            flops_list_expl.append(TFLOPs_expl)
+            metrik_list_expl.append(metrik_expl)
+
         
              
 
@@ -253,75 +296,31 @@ for episode in range(episodes):
         # Exploration_Kernel_Run
         # ===========================================
 
-        shared_mem_size = 2 * tile_size_expl * tile_size_expl * np.float32().itemsize  # Größe des Shared Memorys
-        block=(block_size_expl, block_size_expl, 1)
-        grid = ((P + tile_size_expl - 1) // tile_size_expl, (N + tile_size_expl - 1) // tile_size_expl)
 
-        # Kernel ausführen
-        elapsed_time_in_sec, C = run_kernel(matmul_kernel, N, M, P, A, B, C, tile_size_expl, shared_mem_size, block, grid)
-
-        # Nullstellen
-        numbers_r_zero = (C == 0).sum()
-        reward_zeros = (C != 0).sum() / elements
-
-        # FLOPS/s
-        FLOPs = FLOP / elapsed_time_in_sec
+        metrik_expl, _, TFLOPs_expl = run(tile_size_expl, block_size_expl, N, M, P, A, B, C, FLOP, matmul_kernel, alpha_for_metrik)
         
+        flops_list_expl.append(TFLOPs_expl)
+        metrik_list_expl.append(metrik_expl)
 
-        metrik = math.log10(FLOPs / (FLOP ** alpha_for_metrik))
-        flops_list_expl.append(metrik)
-
-                
-        reward_expl = metrik - ema
-
+        reward_expl = metrik_expl - ema
 
 
         # ===========================================
         # Model_Kernel_Run
         # ===========================================
 
-        shared_mem_size = 2 * tile_size_model * tile_size_model * np.float32().itemsize  # Größe des Shared Memorys
-        block=(block_size_model, block_size_model, 1)
-        grid = ((P + tile_size_model - 1) // tile_size_model, (N + tile_size_model - 1) // tile_size_model)
-    
-        # Kernel ausführen
-        elapsed_time_in_sec, C = run_kernel(matmul_kernel, N, M, P, A, B, C, tile_size_model, shared_mem_size, block, grid)
-
-        # Nullstellen
-        numbers_r_zero = (C == 0).sum()
-        reward_zeros = (C != 0).sum() / elements
-
-        # FLOPS/s
-        FLOPs = FLOP / elapsed_time_in_sec
-        TFLOPs = (FLOPs / 1e+12)
         
-
-        metrik = math.log10(FLOPs / (FLOP ** alpha_for_metrik))
-        losses.append(metrik)
+        metrik_model, numbers_r_zero, TFLOPs_model = run(tile_size, block_size, N, M, P, A, B, C, FLOP, matmul_kernel, alpha_for_metrik)
+        flops_list_model.append(TFLOPs_model)
+        metrik_list_model.append(metrik_model)
 
         
-        
-        reward_model = metrik - ema
-
+        reward_model = metrik_model - ema
 
         ema = (ema * beta_for_ema) + (metrik * (1-beta_for_ema))
-        
 
-
-        #if reward_expl > reward_model:
         delta_performance = reward_expl - reward_model
-        
-        
-        
-        #else:
-            #loss = 0
-    
-        
-        inverted_reward_zeros = 1-reward_zeros
-        #loss = inverted_reward_zeros * (15 ** (numbers_r_zero/elements))
-        #print("reward_zeros: ", reward_zeros)
-        #delta = (15 ** (numbers_r_zero / elements)) * (-1)
-        #print("Delta: ", delta)
+
 
 
     if in_first_expl != True:
@@ -330,31 +329,39 @@ for episode in range(episodes):
         
         
     
-    numbers_r_zero = (C == 0).sum()
+    numbers_r_zero = (C == 0).sum()     # You can use it, if you prefer to quickly check for any zeros!
     
         
     ema_list.append(ema)    
     if (episode +1) == 1:
         print("Exponential Moving Average: ", ema)    
-        print(FLOPs)
+        print("TFLOP/s at 1. Exploration: ", TFLOPs)
     if (episode + 1) != 1:    
-        print(f"Episode: {episode + 1} - Nullwerte: {(numbers_r_zero/elements * 100):.4f}% - Delta_performance: {delta_performance:.4f} - Metrik: {metrik:.4f} - TFLOP: {(FLOP * 1e-12):.6f} - TFLOP/s: {(FLOPs / 1e+12):.4f}")
+        print(f"Episode: {episode + 1} - Zeros: {(numbers_r_zero/elements * 100):.4f}% - Delta_performance: {delta_performance:.4f} - Metrik: {metrik:.4f} - TFLOP: {(FLOP * 1e-12):.6f} - TFLOP/s: {(TFLOPs):.4f}")
         print("Exponential Moving Average: ", ema)
-        flops_list.append(ema)
-
-        #print("GPU: \n", C, "\n")
-        #print("CPU: \n", np.matmul(A,B), "\n")   
         
         print("-----------------------------------------------------------------------")
         
-        #if episode % 100 == 0:
-            #agent.save()
-    
+    # Reset Exploration-Flags
     in_first_expl = False
     is_in_expl = False
 
-# Comparison between kernel results (GPU) and etablished results (CPU) 
+# Comparison between kernel results (GPU) and etablished results (CPU) - making sure we have a proper calculation!
 print("Results -GPU:\n", C, "\n")
 
 print("Results -CPU:\n", np.matmul(A, B), "\n")    
-del C   
+del C    
+
+print(len(flops_list_model))
+
+
+
+# you can leave it or delete it, doesen't matter, since it's use is for evaluation purposes only.
+plt.figure(figsize=(8, 5))  
+plt.plot(range(1, episodes ), metrik_list_model, label='metric-model', color='blue')
+#plt.plot(range(1, episodes + 1), ema_list, label='EMA', color='red')
+#plt.plot(range(1, episodes ), metrik_list_expl, label = 'metric-exploration', color='yellow')
+plt.xlabel("Iteration")
+plt.ylabel("metric")
+plt.legend()
+plt.show()
