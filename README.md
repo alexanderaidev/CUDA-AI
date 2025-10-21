@@ -33,7 +33,7 @@ The comment language aswell as the debug language (print-command) will be switch
 - **Commented-out code** has been deliberately retained during development to facilitate debugging and experimentation.  
   It will be **removed** in the final version of the project.
 - The agent architecture consists exclusively of **dense layers**.
-- a specific save-model and load model will be added soon
+- A save-model- and load-model-function will be added soon
 
 ---
 
