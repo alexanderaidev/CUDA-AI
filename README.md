@@ -2,6 +2,8 @@
 
 A reinforcement learning approach for training an AI to predict optimal block size and tile size configurations for a CUDA kernel.
 
+A scientific  paper has been published: 10.5281/zenodo.17394956
+
 ---
 
 ## ⚠️ Note
